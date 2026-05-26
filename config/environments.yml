@@ -1,0 +1,54 @@
+# environments.yml
+# Environment-specific configuration for the ML pipeline.
+#
+# deploy.sh reads this file to resolve DB, schema, warehouse, and table names.
+# Add or rename environments to match your org's naming conventions.
+
+default:
+  model_name: "CHURN_PREDICTION_MODEL"
+  pipeline_name: "ML_RETRAINING_PIPELINE"
+  schedule: "0 2 * * *"   # daily at 02:00 UTC (cron); set to null to deploy suspended
+
+DEV:
+  database: "DEV_ML_DB"
+  raw_database: "DEV_RAW_DB"
+  schema: "PIPELINES"
+  warehouse: "DEV_ML_WH"
+  compute_pool: "DEV_ML_COMPUTE_POOL"   # only used with --mode mljobs
+  tables:
+    raw_data: "DEV_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view: "DEV_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "DEV_ML_DB.OUTPUT.CHURN_PREDICTIONS"
+
+SIT:
+  database: "SIT_ML_DB"
+  raw_database: "SIT_RAW_DB"
+  schema: "PIPELINES"
+  warehouse: "SIT_ML_WH"
+  compute_pool: "SIT_ML_COMPUTE_POOL"
+  tables:
+    raw_data: "SIT_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view: "SIT_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "SIT_ML_DB.OUTPUT.CHURN_PREDICTIONS"
+
+UAT:
+  database: "UAT_ML_DB"
+  raw_database: "UAT_RAW_DB"
+  schema: "PIPELINES"
+  warehouse: "UAT_ML_WH"
+  compute_pool: "UAT_ML_COMPUTE_POOL"
+  tables:
+    raw_data: "UAT_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view: "UAT_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "UAT_ML_DB.OUTPUT.CHURN_PREDICTIONS"
+
+PRD:
+  database: "PRD_ML_DB"
+  raw_database: "PRD_RAW_DB"
+  schema: "PIPELINES"
+  warehouse: "PRD_ML_WH"
+  compute_pool: "PRD_ML_COMPUTE_POOL"
+  tables:
+    raw_data: "PRD_RAW_DB.PUBLIC.CUSTOMERS"
+    feature_view: "PRD_ML_DB.FEATURES.CUSTOMER_FEATURES"
+    inference_output: "PRD_ML_DB.OUTPUT.CHURN_PREDICTIONS"

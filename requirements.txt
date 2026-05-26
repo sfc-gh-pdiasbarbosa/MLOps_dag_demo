@@ -1,0 +1,5 @@
+snowflake-ml-python>=1.5.0
+snowflake-snowpark-python>=1.18.0
+scikit-learn>=1.4.0
+pandas>=2.0.0
+pyyaml>=6.0
