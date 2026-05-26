@@ -1,16 +1,42 @@
 # MLOps DAG Demo
 
-Best-practices example of an ML retraining pipeline on Snowflake, built with
-**Task DAGs**, **Feature Store**, and **Model Registry**.
+Best-practices example of an ML retraining pipeline on Snowflake, showcasing
+how to match each pipeline stage to its natural compute type.
 
-The pipeline has three stages wired together as a DAG:
+---
+
+## Pipelines
+
+### 1. Batch retraining pipeline (`deploy.sh batch`)
+
+A Task DAG with three stages, each on a different compute:
 
 ```
-TASK_FEATURE_ENGINEERING  >>  TASK_MODEL_TRAINING  >>  TASK_INFERENCE
+TASK_FEATURE_ENGINEERING          TASK_MODEL_TRAINING              TASK_BATCH_INFERENCE
+  Serverless task             >>    ML Job (Compute Pool)    >>    Warehouse stored proc
+  Auto-sized warehouse              Container Runtime               Predictable, short
+  Billed per run                    GPU/large-memory capable        Standard WH credits
+  Feature Store refresh             scikit-learn, xgboost, torch    Reads feature view
 ```
 
-Each task can run as either a **Stored Procedure** (warehouse compute) or an
-**ML Job** (container compute pool) — chosen at deploy time with `--mode`.
+| Stage | Compute | Why |
+|---|---|---|
+| Feature engineering | **Serverless** | SQL-heavy Feature Store refresh; short-lived; Snowflake auto-sizes |
+| Model training | **ML Job** (Compute Pool) | Memory/CPU-intensive; Container Runtime has full ML library set |
+| Batch inference | **Warehouse** | Predictable duration; standard warehouse is the right fit |
+
+### 2. Serving pipeline (`deploy.sh serving`)
+
+Deploys the trained model as a persistent **SPCS inference service** using the
+Model Registry's `create_service()`. No custom Docker image required — the
+registry handles containerisation automatically.
+
+After deployment, the model is callable as a SQL function:
+
+```sql
+SELECT CHURN_PREDICTION_SVC!PREDICT(TENURE, MONTHLY_CHARGES, TOTAL_CHARGES, CONTRACT_TYPE)
+FROM DEV_ML_DB.FEATURES.CUSTOMER_FEATURES;
+```
 
 ---
 
@@ -18,17 +44,18 @@ Each task can run as either a **Stored Procedure** (warehouse compute) or an
 
 ```
 .
-├── deploy.sh                     # One-command manual deploy (Snow CLI)
+├── deploy.sh                     # Entry point for both pipelines
 ├── requirements.txt
 ├── config/
-│   └── environments.yml          # DB / schema / warehouse per environment
+│   └── environments.yml          # DB / schema / warehouse / compute pool per env
 ├── src/
-│   └── ml_pipeline.py            # Feature engineering, training, inference logic
+│   └── ml_pipeline.py            # Core ML logic (feature engineering, training, inference)
 ├── scripts/
-│   └── deploy_pipeline.py        # DAG builder (called by deploy.sh)
+│   ├── deploy_batch.py           # Builds and deploys the mixed-compute DAG
+│   └── deploy_serving.py         # Deploys the SPCS model inference service
 └── sql/
-    ├── 01_setup_environment.sql  # Provision DB, schemas, warehouse, stage
-    └── 02_setup_compute_pool.sql # Compute pool (--mode mljobs only)
+    ├── 01_setup_environment.sql  # Provision DB, schemas, warehouse, stage, image repo
+    └── 02_setup_compute_pool.sql # Compute pool (required for training + serving)
 ```
 
 ---
@@ -49,13 +76,16 @@ Each task can run as either a **Stored Procedure** (warehouse compute) or an
 
 3. **Snowflake objects** provisioned (run once per environment):
    ```bash
-   # Core objects (DB, schemas, warehouse, stage)
+   # Core objects: DB, schemas, warehouse, stage, image repository
    snow sql -c <conn> -f sql/01_setup_environment.sql \
             -D env_prefix=DEV -D wh_size=X-SMALL
 
-   # Compute pool — only if using --mode mljobs
+   # Compute pool (required for ML Job training and SPCS serving)
    snow sql -c <conn> -f sql/02_setup_compute_pool.sql -D env_prefix=DEV
    ```
+
+4. **Privilege**: the role that runs the batch pipeline needs
+   `EXECUTE MANAGED TASK` (for the serverless feature engineering task).
 
 ---
 
@@ -64,65 +94,52 @@ Each task can run as either a **Stored Procedure** (warehouse compute) or an
 ```bash
 chmod +x deploy.sh
 
-# Stored Procedures mode (default — runs on a virtual warehouse)
-./deploy.sh <connection_name> DEV
+# Deploy the mixed-compute retraining DAG
+./deploy.sh batch my_dev_conn DEV
 
-# ML Jobs mode (runs on a Compute Pool — better for GPU/large-memory training)
-./deploy.sh <connection_name> DEV --mode mljobs
+# Deploy the SPCS inference service
+# (requires the batch pipeline to have run at least once to produce a trained model)
+./deploy.sh serving my_dev_conn DEV
 ```
 
 ---
 
-## Execution modes
-
-| Mode | Compute | Best for |
-|------|---------|----------|
-| `sprocs` (default) | Virtual Warehouse | Most ML workloads; no extra infrastructure |
-| `mljobs` | Compute Pool (container) | GPU training, large datasets, custom container images |
-
-Both modes deploy the same three-task DAG. The only difference is what each
-task does internally:
-
-- **sprocs**: the DAG task calls a stored procedure that runs `ml_pipeline.py`
-  directly on the warehouse.
-- **mljobs**: the DAG task calls a stored procedure that submits a containerised
-  ML Job to the compute pool and waits for it to finish.
-
----
-
-## Running the pipeline manually
+## Running the batch pipeline manually
 
 After deploying, the DAG is left **suspended** in non-PRD environments.
-To trigger a run:
 
 ```bash
+# Trigger a manual run
 snow sql -c <conn> -q "
-  EXECUTE TASK <DB>.PIPELINES.ML_RETRAINING_PIPELINE\$TASK_FEATURE_ENGINEERING;
+  EXECUTE TASK DEV_ML_DB.PIPELINES.ML_RETRAINING_PIPELINE\$TASK_FEATURE_ENGINEERING;
 "
-```
 
-Check run history:
-
-```bash
+# Check run history
 snow sql -c <conn> -q "
-  SELECT * FROM TABLE(<DB>.INFORMATION_SCHEMA.TASK_HISTORY())
-  ORDER BY SCHEDULED_TIME DESC
-  LIMIT 20;
+  SELECT * FROM TABLE(DEV_ML_DB.INFORMATION_SCHEMA.TASK_HISTORY())
+  ORDER BY SCHEDULED_TIME DESC LIMIT 20;
 "
 ```
 
 In **PRD**, the DAG schedule is automatically resumed after deploy (default:
-daily at 02:00 UTC — set `schedule` in `environments.yml` to `null` to skip).
+daily at 02:00 UTC — set `schedule: null` in `environments.yml` to skip).
+
+---
+
+## Compute reference
+
+| Compute type | When to use | Billing model |
+|---|---|---|
+| **Serverless task** | Short, SQL-heavy tasks with variable load | Per compute-hour of actual usage |
+| **ML Job (Compute Pool)** | Memory/CPU-intensive training; GPU workloads | Per node-hour while the job runs |
+| **Warehouse** | Predictable, user-controlled compute | Per credit while warehouse is active |
+| **SPCS service** | Persistent online inference endpoint | Per node-hour while service is running |
 
 ---
 
 ## Adapting to your data
 
-The pipeline ships with a placeholder `CUSTOMERS` table schema. To use your
-own data:
-
 1. Update `config/environments.yml` → `tables.raw_data` to point to your source table.
-2. Edit `feature_engineering_task()` in `src/ml_pipeline.py` to define your
-   feature transformations.
-3. Update `model_training_task()` with your model choice and target column.
-4. Re-run `deploy.sh` to redeploy.
+2. Edit `feature_engineering_task()` in `src/ml_pipeline.py` with your feature transformations.
+3. Swap the `LogisticRegression` in `model_training_task()` for your model of choice.
+4. Re-run `./deploy.sh batch <conn> <env>` to redeploy.

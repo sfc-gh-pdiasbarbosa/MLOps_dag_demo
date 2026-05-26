@@ -11,7 +11,7 @@
 --   wh_size     : warehouse size, e.g. X-SMALL, SMALL, MEDIUM, LARGE
 -- =============================================================================
 
--- Warehouse
+-- Warehouse (used by training and inference tasks; feature engineering uses serverless)
 CREATE WAREHOUSE IF NOT EXISTS &{env_prefix}_ML_WH
     WAREHOUSE_SIZE = '&{wh_size}'
     AUTO_SUSPEND   = 60
@@ -27,7 +27,7 @@ CREATE DATABASE IF NOT EXISTS &{env_prefix}_RAW_DB
 
 -- Schemas inside ML DB
 CREATE SCHEMA IF NOT EXISTS &{env_prefix}_ML_DB.PIPELINES
-    COMMENT = 'Stores DAG tasks, stored procedures and code stages';
+    COMMENT = 'Stores DAG tasks, stored procedures, code stages and image repositories';
 
 CREATE SCHEMA IF NOT EXISTS &{env_prefix}_ML_DB.FEATURES
     COMMENT = 'Feature Store feature views (Dynamic Tables)';
@@ -38,17 +38,21 @@ CREATE SCHEMA IF NOT EXISTS &{env_prefix}_ML_DB.OUTPUT
 -- Schema inside raw DB
 CREATE SCHEMA IF NOT EXISTS &{env_prefix}_RAW_DB.PUBLIC;
 
--- Internal stage for pipeline code
+-- Internal stage for pipeline code (stored procedure sources)
 CREATE STAGE IF NOT EXISTS &{env_prefix}_ML_DB.PIPELINES.ML_CODE_STAGE
     DIRECTORY = (ENABLE = TRUE)
     COMMENT    = 'Holds uploaded Python source files for stored procedures';
 
+-- Image repository for SPCS model serving (used by deploy_serving.py)
+CREATE IMAGE REPOSITORY IF NOT EXISTS &{env_prefix}_ML_DB.PIPELINES.ML_IMAGE_REPO
+    COMMENT = 'Container images built by Model Registry for inference services';
+
 -- Placeholder raw data table (replace with your actual source)
 CREATE TABLE IF NOT EXISTS &{env_prefix}_RAW_DB.PUBLIC.CUSTOMERS (
-    CUSTOMER_ID   NUMBER        NOT NULL,
-    TENURE        NUMBER,
-    MONTHLY_CHARGES FLOAT,
-    TOTAL_CHARGES   FLOAT,
-    CONTRACT_TYPE   VARCHAR(50),
-    TARGET_LABEL    NUMBER        -- 1 = churned, 0 = retained
+    CUSTOMER_ID       NUMBER        NOT NULL,
+    TENURE            NUMBER,
+    MONTHLY_CHARGES   FLOAT,
+    TOTAL_CHARGES     FLOAT,
+    CONTRACT_TYPE     VARCHAR(50),
+    TARGET_LABEL      NUMBER        -- 1 = churned, 0 = retained
 );

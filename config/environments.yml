@@ -8,13 +8,15 @@ default:
   model_name: "CHURN_PREDICTION_MODEL"
   pipeline_name: "ML_RETRAINING_PIPELINE"
   schedule: "0 2 * * *"   # daily at 02:00 UTC (cron); set to null to deploy suspended
+  service_name: "CHURN_PREDICTION_SVC"
 
 DEV:
   database: "DEV_ML_DB"
   raw_database: "DEV_RAW_DB"
   schema: "PIPELINES"
   warehouse: "DEV_ML_WH"
-  compute_pool: "DEV_ML_COMPUTE_POOL"   # only used with --mode mljobs
+  compute_pool: "DEV_ML_COMPUTE_POOL"
+  image_repo: "DEV_ML_DB.PIPELINES.ML_IMAGE_REPO"
   tables:
     raw_data: "DEV_RAW_DB.PUBLIC.CUSTOMERS"
     feature_view: "DEV_ML_DB.FEATURES.CUSTOMER_FEATURES"
@@ -26,6 +28,7 @@ SIT:
   schema: "PIPELINES"
   warehouse: "SIT_ML_WH"
   compute_pool: "SIT_ML_COMPUTE_POOL"
+  image_repo: "SIT_ML_DB.PIPELINES.ML_IMAGE_REPO"
   tables:
     raw_data: "SIT_RAW_DB.PUBLIC.CUSTOMERS"
     feature_view: "SIT_ML_DB.FEATURES.CUSTOMER_FEATURES"
@@ -37,6 +40,7 @@ UAT:
   schema: "PIPELINES"
   warehouse: "UAT_ML_WH"
   compute_pool: "UAT_ML_COMPUTE_POOL"
+  image_repo: "UAT_ML_DB.PIPELINES.ML_IMAGE_REPO"
   tables:
     raw_data: "UAT_RAW_DB.PUBLIC.CUSTOMERS"
     feature_view: "UAT_ML_DB.FEATURES.CUSTOMER_FEATURES"
@@ -48,6 +52,7 @@ PRD:
   schema: "PIPELINES"
   warehouse: "PRD_ML_WH"
   compute_pool: "PRD_ML_COMPUTE_POOL"
+  image_repo: "PRD_ML_DB.PIPELINES.ML_IMAGE_REPO"
   tables:
     raw_data: "PRD_RAW_DB.PUBLIC.CUSTOMERS"
     feature_view: "PRD_ML_DB.FEATURES.CUSTOMER_FEATURES"
